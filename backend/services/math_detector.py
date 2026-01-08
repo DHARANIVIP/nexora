@@ -1,32 +1,23 @@
 import cv2
 import numpy as np
-from scipy.fftpack import fft2, fftshift
 
-class MathDetector:
-    def analyze_frequency(self, image_path: str):
-        """
-        Analyzes the frequency domain of an image using FFT.
-        Returns True if anomalies detected (high frequency artifacts), else False.
-        """
-        try:
-            img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                return False
-            
-            # Apply FFT
-            f = fft2(img)
-            fshift = fftshift(f)
-            magnitude_spectrum = 20 * np.log(np.abs(fshift) + 1)
-            
-            # Simple heuristic: Check for high energy in high frequencies
-            # This is a very basic placeholder for actual forensic analysis
-            mean_magnitude = np.mean(magnitude_spectrum)
-            
-            # Arbitrary threshold for "anomaly" in this mock
-            if mean_magnitude > 150: 
-                return True
-            return False
-            
-        except Exception as e:
-            print(f"Error in FFT analysis: {e}")
-            return False
+def analyze_fft(face_path: str):
+    img = cv2.imread(face_path, 0) # Grayscale
+    if img is None: return 0.0
+
+    # Perform Fast Fourier Transform
+    dft = np.fft.fft2(img)
+    dft_shift = np.fft.fftshift(dft)
+    
+    # Calculate magnitude spectrum
+    magnitude_spectrum = 20 * np.log(np.abs(dft_shift) + 1)
+    
+    # High-pass filter logic: Real images are smooth; AIs have high-freq noise
+    rows, cols = img.shape
+    crow, ccol = rows//2 , cols//2
+    # Mask out the low frequencies (center)
+    magnitude_spectrum[crow-30:crow+30, ccol-30:ccol+30] = 0
+    
+    # Calculate anomaly score based on high-frequency energy
+    score = np.mean(magnitude_spectrum)
+    return round(float(score), 2)

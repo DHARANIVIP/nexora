@@ -1,36 +1,29 @@
 import cv2
 import os
+import uuid
 
-class FaceDetector:
-    def __init__(self):
-        # Load Haar Cascade
-        # For this to work, we need the xml file or use cv2's default if available.
-        # We will assume a default path or use a fallback.
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+# Load the built-in OpenCV face model
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-    def extract_faces(self, image_path: str, output_folder: str):
-        """
-        Detects faces in an image, crops them, and saves them.
-        Returns list of paths to cropped face images.
-        """
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-            
-        img = cv2.imread(image_path)
-        if img is None:
-            return []
-            
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = self.face_cascade.detectMultiScale(gray, 1.1, 4)
-        
-        saved_faces = []
-        base_name = os.path.splitext(os.path.basename(image_path))[0]
-        
-        for i, (x, y, w, h) in enumerate(faces):
-            face_img = img[y:y+h, x:x+w]
-            face_filename = f"{base_name}_face_{i}.jpg"
-            face_path = os.path.join(output_folder, face_filename)
-            cv2.imwrite(face_path, face_img)
-            saved_faces.append(face_path)
-            
-        return saved_faces
+def crop_face(frame_path: str, output_folder: str):
+    img = cv2.imread(frame_path)
+    if img is None: return None
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(100, 100))
+
+    if len(faces) == 0:
+        return None 
+
+    # Pick the largest face in the frame
+    x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
+    
+    # Add 15% padding for better AI context
+    padding = int(w * 0.15)
+    y1, y2 = max(0, y-padding), min(img.shape[0], y+h+padding)
+    x1, x2 = max(0, x-padding), min(img.shape[1], x+w+padding)
+    
+    face_img = img[y1:y2, x1:x2]
+    face_path = os.path.join(output_folder, f"face_{uuid.uuid4().hex[:6]}.jpg")
+    cv2.imwrite(face_path, face_img)
+    return face_path
