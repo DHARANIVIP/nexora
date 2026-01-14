@@ -5,6 +5,7 @@ import random
 from loguru import logger
 from backend.core.config import settings
 from backend.core.database import db
+from backend.services.storage_manager import storage_manager
 
 # Optional Imports with Graceful Fallback
 try:
@@ -22,14 +23,19 @@ from backend.services.ai_detector import get_ai_prediction, get_fft_score
 async def process_video_pipeline(scan_id: str, video_path: str, original_filename: str):
     logger.info(f"[{scan_id}] Processing Started: {video_path} ({original_filename})")
     
-    # 1. Setup
-    frame_save_dir = settings.PROCESSED_FOLDER / scan_id
+    # 1. Setup - Get paths from storage manager
+    frame_save_dir = storage_manager.get_processed_folder(scan_id)
     frame_save_dir.mkdir(exist_ok=True)
+    
+    # Get thumbnails directory for this scan
+    thumbnail_dir = storage_manager.get_thumbnails_folder(scan_id)
+    thumbnail_dir.mkdir(exist_ok=True)
     
     analyzed_frames = []
     fake_accumulated_score = 0
     fft_accumulated_score = 0
     count = 0
+    thumbnails = []
     
     # --- MOCK MODE (If OpenCV is missing) ---
     if cv2 is None:
@@ -99,10 +105,26 @@ async def process_video_pipeline(scan_id: str, video_path: str, original_filenam
                         ai_conf = get_ai_prediction(str(analysis_path))
                         fft_val = get_fft_score(str(analysis_path))
                         
+                        # C. Save thumbnail for report
+                        thumbnail_filename = f"thumb_{count}.jpg"
+                        thumbnail_path = thumbnail_dir / thumbnail_filename
+                        # Create smaller thumbnail (max 400px width)
+                        if analysis_img is not None:
+                            h, w = analysis_img.shape[:2]
+                            if w > 400:
+                                scale = 400 / w
+                                new_w, new_h = 400, int(h * scale)
+                                thumbnail_img = cv2.resize(analysis_img, (new_w, new_h))
+                            else:
+                                thumbnail_img = analysis_img
+                            cv2.imwrite(str(thumbnail_path), thumbnail_img)
+                            thumbnails.append(thumbnail_filename)
+                        
                         analyzed_frames.append({
                             "timestamp": round(current_frame / fps, 2),
                             "ai_probability": ai_conf,
-                            "fft_anomaly": fft_val
+                            "fft_anomaly": fft_val,
+                            "thumbnail": thumbnail_filename
                         })
                         
                         fake_accumulated_score += ai_conf
@@ -145,7 +167,8 @@ async def process_video_pipeline(scan_id: str, video_path: str, original_filenam
         "total_frames_analyzed": count,
         "frame_data": analyzed_frames,
         "file_name": original_filename,
-        "created_at": time.time()
+        "created_at": time.time(),
+        "has_thumbnails": len(thumbnails) > 0
     }
     
     # Save to MongoDB (Async)
@@ -158,18 +181,11 @@ async def process_video_pipeline(scan_id: str, video_path: str, original_filenam
     except Exception as e:
         logger.error(f"DB Save Failed: {e}")
 
-    # 4. Cleanup Temporary Files (Cloud Mode)
+    # 4. Cleanup Temporary Files using storage manager
     try:
-        import shutil
-        # Delete extracted frames folder
-        if frame_save_dir.exists():
-            shutil.rmtree(frame_save_dir)
-        
-        # Delete uploaded video file
-        # if os.path.exists(video_path):
-        #    os.remove(video_path)
-            
-        logger.info(f"[{scan_id}] Cleanup successful (Frames cleared, Video kept for playback)")
+        # Delete extracted frames folder (but keep thumbnails and video)
+        storage_manager.cleanup_scan(scan_id, keep_video=True, keep_thumbnails=True)
+        logger.info(f"[{scan_id}] Cleanup successful (Frames cleared, {len(thumbnails)} thumbnails saved, Video kept)")
     except Exception as e:
         logger.error(f"Cleanup Failed: {e}")
 

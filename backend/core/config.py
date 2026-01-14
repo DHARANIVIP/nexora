@@ -1,5 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv(Path(__file__).resolve().parent / '.env')
 
 class Settings:
     PROJECT_NAME: str = "Deepfake Defense System"
@@ -9,11 +13,9 @@ class Settings:
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
     STORAGE_DIR = BASE_DIR / "storage"
     
-    UPLOAD_FOLDER = STORAGE_DIR / "uploads"
-    PROCESSED_FOLDER = STORAGE_DIR / "processed"
-    RESULTS_FOLDER = STORAGE_DIR / "results"
+    # New scan-based storage structure
+    SCANS_FOLDER = STORAGE_DIR / "scans"
     
-    # Allowed Video Formats
     # Allowed Video Formats
     ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 
@@ -24,5 +26,4 @@ class Settings:
 settings = Settings()
 
 # Auto-create directories on start
-for folder in [settings.UPLOAD_FOLDER, settings.PROCESSED_FOLDER, settings.RESULTS_FOLDER]:
-    folder.mkdir(parents=True, exist_ok=True)
+settings.SCANS_FOLDER.mkdir(parents=True, exist_ok=True)

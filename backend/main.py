@@ -10,6 +10,7 @@ import json
 
 from backend.core.config import settings
 from backend.services.video_processor import process_video_pipeline
+from backend.services.storage_manager import storage_manager
 
 app = FastAPI(title="Nexora Deepfake Defense API", version="2.0")
 
@@ -35,8 +36,8 @@ async def shutdown_event():
 # --- serve static files ---
 # Mount the assets folder (JS/CSS)
 app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-# Mount uploads for video playback (Frontend needs to access http://localhost:8000/uploads/video.mp4)
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_FOLDER), name="uploads")
+# Mount scans folder to serve all scan-related files
+app.mount("/scans", StaticFiles(directory=settings.SCANS_FOLDER), name="scans")
 
 # API Routes
 
@@ -47,15 +48,20 @@ async def analyze_video(background_tasks: BackgroundTasks, file: UploadFile = Fi
     if ext not in settings.ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Invalid video format")
     
-    # 2. Save File
+    # 2. Create scan folder and save file
     scan_id = uuid.uuid4().hex
-    file_path = settings.UPLOAD_FOLDER / f"{scan_id}{ext}"
+    paths = storage_manager.create_scan_folder(scan_id)
     
-    with open(file_path, "wb") as buffer:
+    # Save video to temporary location first
+    temp_path = paths["scan_folder"] / f"temp{ext}"
+    with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    # Move to final location using storage manager
+    video_path = storage_manager.save_video(scan_id, str(temp_path), ext)
         
     # 3. Trigger Background Processing
-    background_tasks.add_task(process_video_pipeline, scan_id, str(file_path), file.filename)
+    background_tasks.add_task(process_video_pipeline, scan_id, str(video_path), file.filename)
     
     return {
         "scan_id": scan_id,
@@ -90,6 +96,28 @@ async def get_results(scan_id: str):
 
     # If we are here, it's either not connected or not found
     return {"status": "PROCESSING", "message": "Analysis in progress or ID not found..."}
+
+@app.get("/api/video/{scan_id}")
+async def get_video(scan_id: str):
+    """Serve video file for a scan, automatically detecting the extension"""
+    logger.info(f"Video Request for scan_id: {scan_id}")
+    video_path = storage_manager.get_video_path(scan_id)
+    
+    if video_path and video_path.exists():
+        logger.info(f"Serving video from: {video_path}")
+        # Determine media type based on extension
+        media_type = "video/mp4"  # Default
+        if video_path.suffix.lower() == ".avi":
+            media_type = "video/x-msvideo"
+        elif video_path.suffix.lower() == ".mov":
+            media_type = "video/quicktime"
+        elif video_path.suffix.lower() == ".mkv":
+            media_type = "video/x-matroska"
+            
+        return FileResponse(str(video_path), media_type=media_type)
+        
+    logger.error(f"Video not found for scan_id: {scan_id}")
+    raise HTTPException(status_code=404, detail="Video not found")
 
 # --- SPA Catch-All ---
 

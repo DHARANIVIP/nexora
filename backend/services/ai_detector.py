@@ -16,9 +16,8 @@ except ImportError:
     cv2 = None
 
 # --- 1. DEEP LEARNING ENGINE ---
-# User requested specific model
-API_MODEL_NAME = "prithivMLmods/deepfake-detector-model-v1"
-LOCAL_MODEL_NAME = "prithivMLmods/Deep-Fake-Detector-v2-Model"
+# Using HuggingFace Deep-Fake-Detector-v2-Model
+MODEL_NAME = "prithivMLmods/Deep-Fake-Detector-v2-Model"
 
 # Setup Inference Client (Cloud API)
 hf_token = os.environ.get("HF_TOKEN")
@@ -26,7 +25,7 @@ client = None
 if hf_token and InferenceClient:
     try:
         client = InferenceClient(provider="hf-inference", api_key=hf_token)
-        logger.success(f"HF Inference Client initialized with model: {API_MODEL_NAME}")
+        logger.success(f"HF Inference Client initialized with model: {MODEL_NAME}")
     except Exception as e:
         logger.warning(f"Could not initialize HF Client: {e}")
 
@@ -34,8 +33,8 @@ if hf_token and InferenceClient:
 ai_pipe = None
 if pipeline and not client:
     try:
-        logger.info(f"Loading Local AI Model: {LOCAL_MODEL_NAME}...")
-        ai_pipe = pipeline("image-classification", model=LOCAL_MODEL_NAME, device=-1)
+        logger.info(f"Loading Local AI Model: {MODEL_NAME}...")
+        ai_pipe = pipeline("image-classification", model=MODEL_NAME, device=-1)
         logger.success("Local AI Model Loaded Successfully!")
     except Exception as e:
         logger.warning(f"Local AI Load Failed: {e}")
@@ -56,13 +55,13 @@ def get_ai_prediction(image_path: str):
         # STRATEGY 1: Cloud API
         if client:
             try:
-                logger.debug(f"AI Model: Using Cloud API ({API_MODEL_NAME})")
+                logger.debug(f"AI Model: Using Cloud API ({MODEL_NAME})")
                 # API expects binary or path. Client.image_classification handles local paths?
                 # Usually client takes URL or bytes or PIL.
                 # Let's read file as bytes to be safe or pass PIL
                 if Image:
                     image = Image.open(image_path)
-                    result = client.image_classification(image, model=API_MODEL_NAME)
+                    result = client.image_classification(image, model=MODEL_NAME)
                     # Result format: [{'label': 'Fake', 'score': 0.99}, ...]
                     
                     top = result[0]
@@ -89,7 +88,7 @@ def get_ai_prediction(image_path: str):
 
         # STRATEGY 2: Local Pipeline
         if ai_pipe and Image:
-            logger.debug(f"AI Model: Using Local Pipeline ({LOCAL_MODEL_NAME})")
+            logger.debug(f"AI Model: Using Local Pipeline ({MODEL_NAME})")
             pil_image = Image.open(image_path)
             result = ai_pipe(pil_image)
             top = result[0]

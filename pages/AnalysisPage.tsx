@@ -4,11 +4,13 @@ import { Download, Share2, Shield, AlertTriangle, CheckCircle, Info, Activity, P
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import Navbar from '../components/Navbar';
 import { motion } from 'framer-motion';
+import { generateReportHTML, downloadReport, captureVideoScreenshot } from '../utils/reportGenerator';
 
 interface FrameData {
   timestamp: number;
   ai_probability: number;
   fft_anomaly: number;
+  thumbnail?: string;
 }
 
 interface ScanReport {
@@ -17,7 +19,9 @@ interface ScanReport {
   confidence_score: number;
   total_frames_analyzed: number;
   frame_data: FrameData[];
+  file_name?: string;
   created_at?: number;
+  has_thumbnails?: boolean;
 }
 
 const AnalysisPage: React.FC = () => {
@@ -28,6 +32,7 @@ const AnalysisPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [copied, setCopied] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   // UI Toggles
   const [showLandmarks, setShowLandmarks] = useState(true);
@@ -68,7 +73,50 @@ const AnalysisPage: React.FC = () => {
     );
   }
 
+  // Helper to capture video screenshot
+  const captureVideoScreenshot = (videoElement: HTMLVideoElement): string | null => {
+    const canvas = document.createElement('canvas');
+    canvas.width = videoElement.videoWidth;
+    canvas.height = videoElement.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png');
+    }
+    return null;
+  };
+
   // --- Handlers ---
+  const handleGenerateReport = async () => {
+    if (!report) return;
+
+    setGeneratingReport(true);
+    try {
+      // Capture screenshot of the entire page
+      let pageScreenshot: string | undefined;
+
+      // Use html2canvas to capture the page
+      const html2canvas = (await import('html2canvas')).default;
+      const element = document.querySelector('main') || document.body;
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#FDFDFD',
+        scale: 1,
+        logging: false,
+        useCORS: true
+      });
+      pageScreenshot = canvas.toDataURL('image/jpeg', 0.8);
+
+      const html = generateReportHTML(report, pageScreenshot);
+      const filename = `forensic-report-${report.scan_id}.html`;
+      downloadReport(html, filename);
+    } catch (error) {
+      console.error('Report generation failed:', error);
+      alert('Failed to generate report. Please try again.');
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
   const handleShare = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -144,9 +192,22 @@ const AnalysisPage: React.FC = () => {
               {copied ? <CheckCircle className="w-5 h-5 text-green-500" /> : <Share2 className="w-5 h-5" />}
               {copied && <span className="absolute top-10 right-0 bg-black text-white text-[10px] px-2 py-1 rounded whitespace-nowrap z-50">Link Copied!</span>}
             </button>
-            <button onClick={() => window.print()} className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-blue-200 transition-all text-sm">
-              <Download className="w-4 h-4" />
-              <span>Generate Export Report</span>
+            <button
+              onClick={handleGenerateReport}
+              disabled={generatingReport}
+              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-blue-200 transition-all text-sm"
+            >
+              {generatingReport ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Generating...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Generate Export Report</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -166,7 +227,7 @@ const AnalysisPage: React.FC = () => {
               ref={videoRef}
               onTimeUpdate={handleTimeUpdate}
               className="w-full aspect-video object-cover bg-black"
-              src={`http://localhost:8000/uploads/${report.scan_id}.mp4`}
+              src={`http://localhost:8000/api/video/${report.scan_id}`}
               controls
               onError={(e) => {
                 const target = e.target as HTMLVideoElement;
@@ -191,7 +252,7 @@ const AnalysisPage: React.FC = () => {
                   }
                 }}
                 className="w-full h-full object-cover opacity-60 grayscale"
-                src={`http://localhost:8000/uploads/${report.scan_id}.mp4`}
+                src={`http://localhost:8000/api/video/${report.scan_id}`}
                 autoPlay={false} muted loop={false} // Don't autoplay, just sync potentially? Or keep as ambient visualization
               />
 
