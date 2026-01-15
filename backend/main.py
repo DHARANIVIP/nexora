@@ -41,27 +41,38 @@ app.mount("/scans", StaticFiles(directory=settings.SCANS_FOLDER), name="scans")
 
 # API Routes
 
+from backend.services.image_processor import process_image_pipeline
+
 @app.post("/api/analyze")
 async def analyze_video(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     # 1. Validation
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Invalid video format")
+        raise HTTPException(status_code=400, detail="Invalid file format")
     
     # 2. Create scan folder and save file
     scan_id = uuid.uuid4().hex
     paths = storage_manager.create_scan_folder(scan_id)
     
-    # Save video to temporary location first
+    # Save file to temporary location first
     temp_path = paths["scan_folder"] / f"temp{ext}"
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
     # Move to final location using storage manager
-    video_path = storage_manager.save_video(scan_id, str(temp_path), ext)
+    # Note: save_video in storage_manager just renames/moves, so it works for images too
+    # We might want to rename the method later for clarity, but it is safe.
+    final_path = storage_manager.save_video(scan_id, str(temp_path), ext)
         
-    # 3. Trigger Background Processing
-    background_tasks.add_task(process_video_pipeline, scan_id, str(video_path), file.filename)
+    # 3. Trigger Background Processing based on type
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+    
+    if ext in image_extensions:
+        logger.info(f"Triggering Image Pipeline for {scan_id}")
+        background_tasks.add_task(process_image_pipeline, scan_id, str(final_path), file.filename)
+    else:
+        logger.info(f"Triggering Video Pipeline for {scan_id}")
+        background_tasks.add_task(process_video_pipeline, scan_id, str(final_path), file.filename)
     
     return {
         "scan_id": scan_id,
@@ -98,26 +109,32 @@ async def get_results(scan_id: str):
     return {"status": "PROCESSING", "message": "Analysis in progress or ID not found..."}
 
 @app.get("/api/video/{scan_id}")
-async def get_video(scan_id: str):
-    """Serve video file for a scan, automatically detecting the extension"""
-    logger.info(f"Video Request for scan_id: {scan_id}")
-    video_path = storage_manager.get_video_path(scan_id)
+async def get_media(scan_id: str):
+    """Serve media file (video or image) for a scan"""
+    logger.info(f"Media Request for scan_id: {scan_id}")
+    file_path = storage_manager.get_video_path(scan_id)
     
-    if video_path and video_path.exists():
-        logger.info(f"Serving video from: {video_path}")
+    if file_path and file_path.exists():
+        logger.info(f"Serving media from: {file_path}")
         # Determine media type based on extension
-        media_type = "video/mp4"  # Default
-        if video_path.suffix.lower() == ".avi":
-            media_type = "video/x-msvideo"
-        elif video_path.suffix.lower() == ".mov":
-            media_type = "video/quicktime"
-        elif video_path.suffix.lower() == ".mkv":
-            media_type = "video/x-matroska"
-            
-        return FileResponse(str(video_path), media_type=media_type)
+        media_type = "application/octet-stream" # Default
+        ext = file_path.suffix.lower()
         
-    logger.error(f"Video not found for scan_id: {scan_id}")
-    raise HTTPException(status_code=404, detail="Video not found")
+        # Videos
+        if ext == ".mp4": media_type = "video/mp4"
+        elif ext == ".avi": media_type = "video/x-msvideo"
+        elif ext == ".mov": media_type = "video/quicktime"
+        elif ext == ".mkv": media_type = "video/x-matroska"
+        
+        # Images
+        elif ext == ".jpg" or ext == ".jpeg": media_type = "image/jpeg"
+        elif ext == ".png": media_type = "image/png"
+        elif ext == ".webp": media_type = "image/webp"
+            
+        return FileResponse(str(file_path), media_type=media_type)
+        
+    logger.error(f"Media not found for scan_id: {scan_id}")
+    raise HTTPException(status_code=404, detail="Media not found")
 
 # --- SPA Catch-All ---
 

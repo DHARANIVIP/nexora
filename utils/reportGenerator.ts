@@ -44,23 +44,53 @@ export function captureVideoScreenshot(videoElement: HTMLVideoElement): string |
 /**
  * Generates a comprehensive HTML report with all forensic data and thumbnails
  */
-export function generateReportHTML(report: ScanReport, pageScreenshot?: string): string {
+export async function generateReportHTML(report: ScanReport, pageScreenshot?: string): Promise<string> {
   const isFake = report.verdict === 'DEEPFAKE';
   const scoreColor = isFake ? '#EF4444' : '#3B82F6';
   const timestamp = report.created_at ? new Date(report.created_at * 1000).toLocaleString() : new Date().toLocaleString();
 
-  // Generate thumbnails section with first image featured
-  const thumbnailsHTML = report.frame_data
+
+  // Fetch and embed thumbnails (Base64)
+  const thumbnailItems = await Promise.all(report.frame_data
     .filter(f => f.thumbnail)
-    .map((frame, i) => `
-      <div class="thumbnail-item${i === 0 ? ' featured' : ''}">
-        <img src="http://localhost:8000/scans/${report.scan_id}/thumbnails/${frame.thumbnail}" alt="Frame ${i}" />
-        <div class="thumbnail-info">
-          <span>Time: ${frame.timestamp.toFixed(2)}s</span>
-          <span>AI: ${(frame.ai_probability * 100).toFixed(1)}%</span>
-        </div>
-      </div>
-    `).join('');
+    .map(async (frame, i) => {
+      try {
+        const imageUrl = `http://localhost:8000/scans/${report.scan_id}/thumbnails/${frame.thumbnail}`;
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result as string;
+            resolve(`
+                  <div class="thumbnail-item${i === 0 ? ' featured' : ''}">
+                    <img src="${base64data}" alt="Frame ${i}" />
+                    <div class="thumbnail-info">
+                      <span>Time: ${frame.timestamp.toFixed(2)}s</span>
+                      <span>AI: ${(frame.ai_probability * 100).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                `);
+          };
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {
+        console.warn("Failed to embed thumbnail", e);
+        // Fallback to URL if fetch fails
+        return `
+          <div class="thumbnail-item${i === 0 ? ' featured' : ''}">
+             <img src="http://localhost:8000/scans/${report.scan_id}/thumbnails/${frame.thumbnail}" alt="Frame ${i}" />
+             <div class="thumbnail-info">
+               <span>Time: ${frame.timestamp.toFixed(2)}s</span>
+               <span>AI: ${(frame.ai_probability * 100).toFixed(1)}%</span>
+             </div>
+           </div>
+         `;
+      }
+    }));
+
+  const thumbnailsHTML = thumbnailItems.join('');
+
 
   // Generate frame data table
   const frameTableHTML = report.frame_data.map((frame, i) => `
@@ -405,3 +435,5 @@ export function downloadReport(html: string, filename: string): void {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+

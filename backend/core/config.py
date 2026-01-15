@@ -17,7 +17,7 @@ class Settings:
     SCANS_FOLDER = STORAGE_DIR / "scans"
     
     # Allowed Video Formats
-    ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
+    ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
     # Database
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb+srv://vvdharani57_db_user:GPRXbgUnuzy9FSnW@cluster0.tnkfodr.mongodb.net/?appName=Cluster0")

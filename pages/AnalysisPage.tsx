@@ -21,7 +21,7 @@ interface ScanReport {
   frame_data: FrameData[];
   file_name?: string;
   created_at?: number;
-  has_thumbnails?: boolean;
+  media_type?: 'video' | 'image';
 }
 
 const AnalysisPage: React.FC = () => {
@@ -106,7 +106,7 @@ const AnalysisPage: React.FC = () => {
       });
       pageScreenshot = canvas.toDataURL('image/jpeg', 0.8);
 
-      const html = generateReportHTML(report, pageScreenshot);
+      const html = await generateReportHTML(report, pageScreenshot);
       const filename = `forensic-report-${report.scan_id}.html`;
       downloadReport(html, filename);
     } catch (error) {
@@ -147,6 +147,7 @@ const AnalysisPage: React.FC = () => {
   // Derived Data for UI
   const isFake = report.verdict === 'DEEPFAKE';
   const scoreColor = isFake ? '#EF4444' : '#3B82F6';
+  const isVideo = report.media_type !== 'image'; // Default to video if missing
 
   // Prepare Chart Data
   const chartData = report.frame_data.map(f => ({
@@ -162,6 +163,11 @@ const AnalysisPage: React.FC = () => {
     { title: "Phoneme Syncing", desc: "Audio-visual alignment verification", status: 'pass' },
     { title: "Latent Space Bleeding", desc: "Shadow artifacts inconsistent with environmental light", status: report.confidence_score > 70 ? 'critical' : 'pass' },
   ];
+
+  // Filter evidence for images (remove temporal checks)
+  const displayEvidence = isVideo ? EVIDENCE_CHECKS : EVIDENCE_CHECKS.filter(c =>
+    c.title !== "Optical Flow Consistency" && c.title !== "Blink Biometrics" && c.title !== "Phoneme Syncing"
+  );
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] font-sans text-slate-800 pb-20">
@@ -217,23 +223,31 @@ const AnalysisPage: React.FC = () => {
 
         {/* VISUALS GRID */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* PLAYER */}
+          {/* PLAYER / IMAGE VIEWER */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative group">
             <div className="absolute top-4 left-4 z-10 bg-black/80 backdrop-blur text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider flex items-center">
               <Activity className="w-3 h-3 mr-1.5" /> Source Material
             </div>
 
-            <video
-              ref={videoRef}
-              onTimeUpdate={handleTimeUpdate}
-              className="w-full aspect-video object-cover bg-black"
-              src={`http://localhost:8000/api/video/${report.scan_id}`}
-              controls
-              onError={(e) => {
-                const target = e.target as HTMLVideoElement;
-                console.log("Video load error", e);
-              }}
-            />
+            {isVideo ? (
+              <video
+                ref={videoRef}
+                onTimeUpdate={handleTimeUpdate}
+                className="w-full aspect-video object-cover bg-black"
+                src={`http://localhost:8000/api/video/${report.scan_id}`}
+                controls
+                onError={(e) => {
+                  const target = e.target as HTMLVideoElement;
+                  console.log("Video load error", e);
+                }}
+              />
+            ) : (
+              <img
+                src={`http://localhost:8000/api/video/${report.scan_id}`}
+                alt="Analyzed Image"
+                className="w-full h-full object-contain bg-black max-h-[500px]"
+              />
+            )}
           </div>
 
           {/* OVERLAY PREVIEW */}
@@ -243,18 +257,25 @@ const AnalysisPage: React.FC = () => {
             </div>
 
             {/* Simulated Analysis View (Grayscale + Overlays) */}
-            <div className="w-full aspect-video relative overflow-hidden">
-              <video
-                ref={(ref) => {
-                  // Sync backup video manually if needed, or just let it loop for effect
-                  if (ref && videoRef.current) {
-                    ref.currentTime = videoRef.current.currentTime;
-                  }
-                }}
-                className="w-full h-full object-cover opacity-60 grayscale"
-                src={`http://localhost:8000/api/video/${report.scan_id}`}
-                autoPlay={false} muted loop={false} // Don't autoplay, just sync potentially? Or keep as ambient visualization
-              />
+            <div className="w-full aspect-video relative overflow-hidden flex items-center justify-center bg-black">
+              {isVideo ? (
+                <video
+                  ref={(ref) => {
+                    if (ref && videoRef.current) {
+                      ref.currentTime = videoRef.current.currentTime;
+                    }
+                  }}
+                  className="w-full h-full object-cover opacity-60 grayscale"
+                  src={`http://localhost:8000/api/video/${report.scan_id}`}
+                  autoPlay={false} muted loop={false}
+                />
+              ) : (
+                <img
+                  src={`http://localhost:8000/api/video/${report.scan_id}`}
+                  alt="Analyzed Image Overlay"
+                  className="w-full h-full object-contain opacity-60 grayscale"
+                />
+              )}
 
               {showLandmarks && (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -276,6 +297,7 @@ const AnalysisPage: React.FC = () => {
                   </button>
                   <span className="text-[10px] font-bold text-white uppercase tracking-wider">Landmarks</span>
                 </div>
+                {/* Heatmap can apply to images too */}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setShowHeatmap(!showHeatmap)}
@@ -287,7 +309,7 @@ const AnalysisPage: React.FC = () => {
                 </div>
               </div>
               <div className="text-[10px] font-mono text-blue-300 animate-pulse">
-                FRAME {currentFrame} / {report.total_frames_analyzed}
+                {isVideo ? `FRAME ${currentFrame} / ${report.total_frames_analyzed}` : "STATIC IMAGE ANALYSIS"}
               </div>
             </div>
           </div>
@@ -335,11 +357,11 @@ const AnalysisPage: React.FC = () => {
                 <Activity className="w-4 h-4" />
                 <span className="text-xs font-bold uppercase tracking-wider">Forensic Evidence</span>
               </div>
-              {isFake && <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-1 rounded">3 CRITICAL</span>}
+              {isFake && <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-1 rounded">CRITICAL DETECTED</span>}
             </div>
 
             <div className="space-y-4">
-              {EVIDENCE_CHECKS.map((check, i) => (
+              {displayEvidence.map((check, i) => (
                 <div key={i} className={`p-4 rounded-xl border ${check.status === 'critical' ? 'bg-red-50/50 border-red-100' : check.status === 'warning' ? 'bg-orange-50/50 border-orange-100' : 'bg-green-50/50 border-green-100'}`}>
                   <div className="flex items-start space-x-3">
                     {check.status === 'critical' ? (
@@ -360,97 +382,111 @@ const AnalysisPage: React.FC = () => {
           </div>
 
           {/* 3. FREQUENCY PROFILE CHART */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[400px] flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center space-x-2 text-slate-400">
-                <Activity className="w-4 h-4" />
-                <span className="text-xs font-bold uppercase tracking-wider">Frequency Profile</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center space-x-1.5">
-                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Real</span>
+          {isVideo ? (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[400px] flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center space-x-2 text-slate-400">
+                  <Activity className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Frequency Profile</span>
                 </div>
-                <div className="flex items-center space-x-1.5">
-                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Synth</span>
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1.5">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Real</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5">
+                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Synth</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorSynth" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#EF4444" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="time" hide />
+                    <YAxis hide domain={[0, 100]} />
+                    <RechartsTooltip
+                      contentStyle={{ backgroundColor: '#fff', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', borderRadius: '8px' }}
+                      labelStyle={{ display: 'none' }}
+                    />
+                    <Area type="monotone" dataKey="real" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorReal)" />
+                    <Area type="monotone" dataKey="synth" stroke="#EF4444" strokeWidth={2} fillOpacity={1} fill="url(#colorSynth)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider">Temporal Blur</span>
+                  <span className="font-bold text-red-500 uppercase tracking-wider">High Variance</span>
+                </div>
+                <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-500 w-3/4"></div>
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider">Artifact Density</span>
+                  <span className="font-bold text-red-500 uppercase tracking-wider">0.82 / Frame</span>
                 </div>
               </div>
             </div>
-
-            <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorSynth" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#EF4444" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorReal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="time" hide />
-                  <YAxis hide domain={[0, 100]} />
-                  <RechartsTooltip
-                    contentStyle={{ backgroundColor: '#fff', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', borderRadius: '8px' }}
-                    labelStyle={{ display: 'none' }}
-                  />
-                  <Area type="monotone" dataKey="real" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorReal)" />
-                  <Area type="monotone" dataKey="synth" stroke="#EF4444" strokeWidth={2} fillOpacity={1} fill="url(#colorSynth)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-slate-400 uppercase tracking-wider">Temporal Blur</span>
-                <span className="font-bold text-red-500 uppercase tracking-wider">High Variance</span>
-              </div>
-              <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-red-500 w-3/4"></div>
-              </div>
-
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-slate-400 uppercase tracking-wider">Artifact Density</span>
-                <span className="font-bold text-red-500 uppercase tracking-wider">0.82 / Frame</span>
+          ) : (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[400px] flex flex-col justify-center items-center">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Activity className="w-8 h-8 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2">Static Image Analysis</h3>
+                <p className="text-slate-500 text-sm max-w-xs mx-auto">Temporal frequency profiles are not applicable to static images. Analysis focused on pixel distribution and texture artifacts.</p>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* TIMELINE */}
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex items-center space-x-2 text-slate-400 mb-8">
-            <Activity className="w-4 h-4" />
-            <span className="text-xs font-bold uppercase tracking-wider">Artifact Detection Timeline</span>
-          </div>
+        {isVideo && (
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+            <div className="flex items-center space-x-2 text-slate-400 mb-8">
+              <Activity className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Artifact Detection Timeline</span>
+            </div>
 
-          <div className="h-16 bg-slate-50 rounded-lg relative overflow-hidden flex items-end cursor-pointer group">
-            {/* Generate bars based on frame data */}
-            {report.frame_data.map((frame, i) => {
-              const isAnomaly = frame.ai_probability > 0.5;
-              const isActive = i === currentFrame;
-              return (
-                <div
-                  key={i}
-                  onClick={() => handleTimelineClick(i)}
-                  className={`flex-1 mx-px transition-all hover:scale-y-110 ${isActive ? 'bg-blue-600 !opacity-100 scale-y-110' : isAnomaly ? 'bg-red-400' : 'bg-slate-200'} ${isActive ? '' : 'opacity-80'}`}
-                  style={{ height: isAnomaly ? `${frame.ai_probability * 100}%` : '20%' }}
-                  title={`Time: ${frame.timestamp}s | Score: ${(frame.ai_probability * 100).toFixed(0)}%`}
-                ></div>
-              );
-            })}
-          </div>
+            <div className="h-16 bg-slate-50 rounded-lg relative overflow-hidden flex items-end cursor-pointer group">
+              {/* Generate bars based on frame data */}
+              {report.frame_data.map((frame, i) => {
+                const isAnomaly = frame.ai_probability > 0.5;
+                const isActive = i === currentFrame;
+                return (
+                  <div
+                    key={i}
+                    onClick={() => handleTimelineClick(i)}
+                    className={`flex-1 mx-px transition-all hover:scale-y-110 ${isActive ? 'bg-blue-600 !opacity-100 scale-y-110' : isAnomaly ? 'bg-red-400' : 'bg-slate-200'} ${isActive ? '' : 'opacity-80'}`}
+                    style={{ height: isAnomaly ? `${frame.ai_probability * 100}%` : '20%' }}
+                    title={`Time: ${frame.timestamp}s | Score: ${(frame.ai_probability * 100).toFixed(0)}%`}
+                  ></div>
+                );
+              })}
+            </div>
 
-          <div className="flex justify-between mt-2 text-[10px] font-mono text-slate-400 uppercase">
-            <span>00:00:00</span>
-            <span>00:00:{(report.frame_data.length / 2).toFixed(0).padStart(2, '0')}</span>
-            <span>00:00:{report.frame_data.length.toFixed(0).padStart(2, '0')}</span>
+            <div className="flex justify-between mt-2 text-[10px] font-mono text-slate-400 uppercase">
+              <span>00:00:00</span>
+              <span>00:00:{(report.frame_data.length / 2).toFixed(0).padStart(2, '0')}</span>
+              <span>00:00:{report.frame_data.length.toFixed(0).padStart(2, '0')}</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ACTIONS */}
         <div className="flex justify-center space-x-4 pt-4">

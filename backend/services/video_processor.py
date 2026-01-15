@@ -168,7 +168,8 @@ async def process_video_pipeline(scan_id: str, video_path: str, original_filenam
         "frame_data": analyzed_frames,
         "file_name": original_filename,
         "created_at": time.time(),
-        "has_thumbnails": len(thumbnails) > 0
+        "has_thumbnails": len(thumbnails) > 0,
+        "media_type": "video"
     }
     
     # Save to MongoDB (Async)
