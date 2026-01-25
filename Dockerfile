@@ -3,9 +3,9 @@ FROM node:20-alpine as build-step
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies with reduced memory usage
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps --no-audit --prefer-offline
 
 # Copy source code and build
 COPY . .
