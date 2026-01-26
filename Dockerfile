@@ -17,10 +17,15 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install system dependencies (needed for OpenCV)
-RUN apt-get update && apt-get install -y \
+# Updated for Debian Bookworm/Trixie compatibility
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
 # Install Python dependencies
 COPY backend/requirements.txt ./backend/requirements.txt
@@ -38,6 +43,10 @@ RUN mkdir -p storage/scans
 
 # Expose port (railway/render usually ignore this and set their own env var PORT, but good for documentation)
 EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import requests; requests.get('http://localhost:${PORT:-8000}/api/scans')" || exit 1
 
 # Run the application
 # Use PORT environment variable if set, otherwise default to 8000
