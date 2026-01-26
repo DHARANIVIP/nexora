@@ -7,6 +7,8 @@ import shutil
 import uuid
 import os
 import json
+import asyncio
+import logging
 
 from backend.core.config import settings
 from backend.services.video_processor import process_video_pipeline
@@ -27,6 +29,13 @@ from backend.core.database import db
 @app.on_event("startup")
 async def startup_event():
     logger.info("Nexora API Starting up...")
+    
+    # Suppress Windows-specific asyncio socket errors
+    if os.name == 'nt':  # Windows
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        # Suppress ConnectionResetError warnings
+        logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+    
     db.connect()
 
 @app.on_event("shutdown")
