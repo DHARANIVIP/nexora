@@ -5,14 +5,21 @@ try:
     import numpy as np
     
     # Initialize MediaPipe Face Detection
-    mp_face_detection = mp.solutions.face_detection
+    # Handle both old and new mediapipe API versions
+    try:
+        mp_face_detection = mp.solutions.face_detection
+    except AttributeError:
+        # Fallback for newer mediapipe versions without solutions
+        from mediapipe.python.solutions import face_detection as mp_face_detection
+    
     # model_selection: 0 for short-range (within 2m), 1 for full-range (within 5m)
     # Lower confidence threshold for better detection
     detector = mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.3)
     
     # Fallback: OpenCV Haar Cascade
     haar_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-except ImportError:
+except (ImportError, AttributeError) as e:
+    logging.warning(f"Failed to initialize face detection: {e}")
     cv2 = None
     mp = None
     np = None
