@@ -63,26 +63,71 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 The application will be available at http://localhost:8000
 
-## 🚀 Deployment & Public Access
+## 🚀 Deployment
 
-This project is configured as a unified application where FastAPI serves the React frontend.
+### Deploy to Render (Recommended)
 
-### Option 1: Run Locally (Production Mode)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
 
-1. **Build the Frontend:**
+This project is optimized for deployment on Render with a single-click setup.
+
+**Quick Deploy:**
+1. Push your code to GitHub
+2. Sign up at [Render.com](https://render.com)
+3. Create a new Web Service from your repository
+4. Render auto-detects `render.yaml` configuration
+5. Add environment variables (see below)
+6. Click "Create Web Service"
+
+**For detailed step-by-step instructions, see:** [Render Deployment Guide](.agent/workflows/render-deploy.md)
+
+**Required Environment Variables:**
+- `MONGODB_URI` - Your MongoDB connection string (get from [MongoDB Atlas](https://www.mongodb.com/cloud/atlas))
+- `HF_TOKEN` - Your HuggingFace token (get from [HuggingFace](https://huggingface.co/settings/tokens))
+
+**Features:**
+- ✅ Automatic builds on git push
+- ✅ Free SSL certificates
+- ✅ 1GB persistent storage for uploads
+- ✅ Health check monitoring
+- ✅ Free tier available (750 hours/month)
+
+### Run Locally (Development)
+
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   pip install -r backend/requirements.txt
+   ```
+
+2. **Configure Environment:**
+   ```bash
+   cp backend/.env.example backend/.env
+   # Edit backend/.env with your credentials
+   ```
+
+3. **Run Development Servers:**
+   ```bash
+   # Terminal 1 - Frontend
+   npm run dev
+   
+   # Terminal 2 - Backend
+   python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+### Run Locally (Production Mode)
+
+1. **Build Frontend:**
    ```bash
    npm install
    npm run build
    ```
-   This creates a `dist/` folder with the optimized React app.
 
-2. **Configure Environment:** Ensure your `backend/.env` file is set up with `MONGO_URI` and `HF_TOKEN`.
-
-3. **Start the Server:**
+2. **Start Server:**
    ```bash
    python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
    ```
-   Visit http://localhost:8000.
+   Visit http://localhost:8000
 
 
 

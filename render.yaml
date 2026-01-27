@@ -2,10 +2,25 @@ services:
   - type: web
     name: deepfake-detection
     env: python
+    runtime: python-3.10.0
     region: oregon
     plan: free
     buildCommand: "./build.sh"
-    startCommand: "python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1"
+    
+    # Health check endpoint
+    healthCheckPath: /api/scans
+    
+    # Auto-deploy on push to main branch
+    autoDeploy: true
+    
+    # Disk storage for uploaded files (persistent across deploys)
+    disk:
+      name: deepfake-storage
+      mountPath: /opt/render/project/src/storage
+      sizeGB: 1
+    
+    # Environment variables
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -13,3 +28,7 @@ services:
         value: 20.11.0
       - key: MONGODB_URI
         sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
