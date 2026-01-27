@@ -8,7 +8,6 @@ pillow
 transformers
 torch
 huggingface_hub
-mediapipe==0.10.9
 loguru
 motor
 pymongo

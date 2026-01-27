@@ -2,7 +2,7 @@ services:
   - type: web
     name: deepfake-detection
     env: python
-    runtime: python-3.10.0
+    runtime: python-3.11
     region: oregon
     plan: free
     buildCommand: "./build.sh"
@@ -22,8 +22,6 @@ services:
     
     # Environment variables
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.0
       - key: NODE_VERSION
         value: 20.11.0
       - key: MONGODB_URI
